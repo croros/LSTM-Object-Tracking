@@ -225,7 +225,8 @@ class getData():
 if __name__=='__main__':
     directory = '../visual_tracker_benchmark/face/'
     trainingList = ['Girl','Girl3','Girl2','Jumping','DragonBaby']
-    trainingData = dict()
+    trainingData = dict()A
+    numSamples = len(trainingList)
     newSize = 100
     #for data in trainingList:
     #    trainingData[data] = getVideoFrames(directory+data+'/img/',newSize)
@@ -257,8 +258,10 @@ if __name__=='__main__':
                 loss.backward(retain_graph=True)
             optimizer.step()
             print(torch.mean(loss,0))
+            avgLoss += loss.data.item()
             del loss
             del bbs
+        print("Epoch loss: ", avgLoss/numSamples)
         if i % 5 == 0 :
             torch.save(lstm.state_dict(), '../interConvLSTM_' + 'epoch'+str(i)+'.pth')
 
