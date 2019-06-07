@@ -71,6 +71,7 @@ class myConvLSTM(nn.Module):
         self.padding = int((filter_size-1)/2) #allows output to have same size
         self.outputOps = nn.ModuleList([nn.Sigmoid(),nn.Sigmoid(),nn.Tanh(),nn.Sigmoid(), nn.Tanh()])
         self.conv = nn.Conv2d(self.input_chan + self.hidden_chan, 4*self.hidden_chan, self.filter_size,1,self.padding) #Effectively only need one Conv Layer, because output channels used for each of ft, it, and ct
+        print(self.conv)
         #TODO: more processing to go from feature map to 4 coord bb???
         self.maxpool = nn.Sequential(nn.Conv2d(self.hidden_chan,1,self.filter_size,1,self.padding),nn.MaxPool2d(4,stride=4))
         self.bb_out = nn.Sequential(nn.Linear(int(self.shape[0]/4)*int(self.shape[1]/4),100),nn.Linear(100,4))
@@ -78,7 +79,7 @@ class myConvLSTM(nn.Module):
     def forward(self,loader,init_bb):
         batch_size = loader.batchSize
         seq_size = loader.numFrames
-        new = cv2.rectangle(np.zeros((self.shape[0],self.shape[1],3)),(int(init_bb[0]),int(init_bb[1])),(int(init_bb[0])+int(init_bb[2]),int(init_bb[1])+int(init_bb[3])),(0,255,0),5)
+        new = cv2.rectangle(np.zeros((self.shape[0],self.shape[1],self.hidden_chan)),(int(init_bb[0]),int(init_bb[1])),(int(init_bb[0])+int(init_bb[2]),int(init_bb[1])+int(init_bb[3])),(0,255,0),5)
         new = torch.from_numpy(np.moveaxis(new,-1,0)).float()
         #hidden_out = torch.zeros(seq_size,self.hidden_chan, self.shape[0],self.shape[1]) #UNCOMMENT TO LOOK AT hidden feature map at each step
         hidden_bb = torch.zeros(seq_size,4)
@@ -90,7 +91,7 @@ class myConvLSTM(nn.Module):
         for t in range(seq_size):
 #            xt = x[:,t,:,:,:]
             xt = loader.getNextFrame()
-            print(t)
+            #print(t)
             #print("Before cudaing xt: ", torch.cuda.memory_allocated(torch.cuda.current_device()))
             xt = xt.cuda()
             #print("After cudaing xt: ",torch.cuda.memory_allocated(torch.cuda.current_device()))
@@ -225,9 +226,10 @@ class getData():
 if __name__=='__main__':
     directory = '../visual_tracker_benchmark/face/'
     trainingList = ['Girl','Girl3','Girl2','Jumping','DragonBaby']
-    trainingData = dict()A
+    trainingData = dict()
     numSamples = len(trainingList)
-    newSize = 100
+    newSize = 300
+    preload = [True,'/mnt/cloudNAS2/constantine/ConvLSTM_300size_s1loss/','secondConvLSTM_250epochs_300size_2019-06-06_20:05.pth',250]
     #for data in trainingList:
     #    trainingData[data] = getVideoFrames(directory+data+'/img/',newSize)
     #img = trainingData['Girl2'][0][0]
@@ -237,12 +239,17 @@ if __name__=='__main__':
     loadData = getData(directory,[],newSize)
     numEpochs = 250
     lstm = myConvLSTM((newSize,newSize),3,3,3) #TODO: Different hidden_dim channel???
+    if preload[0]:
+        print('preloading weights')
+        lstm.load_state_dict(torch.load(preload[1]+preload[2]))
+        lstm.eval()
     lstm = lstm.cuda()
     #lr = 1e-2
     #optimizer = optim.Adadelta(lstm.parameters(), lr=lr, weight_decay=1e-05)
     optimizer = optim.Adam(lstm.parameters())
     for i in range(numEpochs):
-        print(i)
+        print(i+preload[3])
+        avgLoss = 0
         for key in trainingList: #TODO: make possible to work with batch size >1
             #Prepare video sequence for going into net (unsqueeze for batch_sz=1, cuda, Variable -NO LONGER NEEDED)
             loadData.setVid(key)
@@ -253,6 +260,7 @@ if __name__=='__main__':
             seq_size = bbs.shape[0]
             for t in range(seq_size):
                 loss =  F.smooth_l1_loss(bbs[t,:],loadData.getNextBox(),reduction='mean')#F.mse_loss(bbs[t,:],trainingData[data][1][t,:],reduction='mean')#TODO: Best loss function???
+                #loss =  F.mse_loss(bbs[t,:],loadData.getNextBox(),reduction='mean')
                 #loss = jaccard_loss(torch.unsqueeze(bbs[t,:]),trainingData[data][1][t,:])
 
                 loss.backward(retain_graph=True)
@@ -267,8 +275,8 @@ if __name__=='__main__':
 
     import datetime
     now=datetime.datetime.now()
-    torch.save(lstm.state_dict(), '../secondConvLSTM_' + str(numEpochs)+ 'epochs_' + now.strftime("%Y-%m-%d_%H:%M")+'.pth')
+    torch.save(lstm.state_dict(), '../secondConvLSTM_' + str(numEpochs+preload[3])+ 'epochs_' + str(newSize) + 'size_' + now.strftime("%Y-%m-%d_%H:%M")+'.pth')
             
-        
+    #TODO: save optimizer state dict for further training
 
         
